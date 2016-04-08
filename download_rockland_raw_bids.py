@@ -6,6 +6,7 @@
 This script downloads data from the NKI Rockland Sample Lite releases
 stored in the cloud in BIDS format.  You can specify sex, age range, handedness,
 session, scan type (anatomical, functional, dwi) and to limit your download to a subset of the sample.
+If no options are specified, all available files are downloaded.
 
 Use the '-h' to get more information about command line usage.
 '''
@@ -33,13 +34,13 @@ SERIES_MAP = {
 'MORALDILEMMA':'task-MORALDILEMMA'
 }
 
-#TODO Add derivatives: despiked physio and mask.
 # Main collect and download function
 def collect_and_download(out_dir,
                          less_than=0, greater_than=0, sex='', handedness='',
                          sessions=SESSIONS,
                          scans=SCANS,
                          series=SERIES_MAP.keys(),
+                         derivatives=False,
                          dryrun=False):
     '''
     Function to collect and download images from the ABIDE preprocessed
@@ -64,6 +65,8 @@ def collect_and_download(out_dir,
         the scan types to download.  Can be 'anat','func','dwi' or 'fmap'.
     series : list
         the series to download (for functional scans)
+    derivatives : boolean
+        whether or not to download data derivatives for functional scans
     dryrun : boolean
         whether or not to perform a dry run (i.e., no actual downloads,
         just listing files that would be downloaded)
@@ -130,7 +133,7 @@ def collect_and_download(out_dir,
         age_gt_df = participants_df.where(participants_df['age'] > greater_than)
     if less_than and greater_than:
         participants_df = pandas.merge(age_lt_df, age_gt_df,
-                on='participant_id')
+                on=participants_df.columns.tolist())
     elif less_than:
         participants_df = age_lt_df
     elif greater_than:
@@ -171,13 +174,15 @@ def collect_and_download(out_dir,
             print 'Could not fetch sessions tsv file %s.\
                     Error below:' % s3_sessions
             print exc
+            print 'Skipping session'
+            continue
 
         # Remove sessions that we do not want from sessions tsv.
-        sessions_df.where(~sessions_df['session_id'].isin(sessions), inplace=True)
+        sessions_df.where(sessions_df['session_id'].isin(sessions), inplace=True)
         sessions_df.dropna(inplace=True)
         # If there are no sessions of the desired type in this TSV, continue to the next particiapnt.
         if len(sessions_df) == 0:
-            participants_df.where(participants_df['participant_id'] != participant, inplace=True)
+            participants_df.where(participants_df['participant_id'] != participant.replace('sub-',''), inplace=True)
             participants_df.dropna(inplace=True)
             continue
 
@@ -189,12 +194,24 @@ def collect_and_download(out_dir,
                     s3_paths.append('/'.join([s3_prefix, participant, session, scan, '_'.join([participant, session, 'T1w'])+'.nii.gz']))
                 elif scan == 'func':
                     for serie in series:
+                        if derivatives:
+                            s3_paths.append('/'.join([s3_prefix, 'derivatives', participant, session, scan, '_'.join([participant, session, SERIES_MAP[serie], 'recording-despiked', 'physio'])+'.tsv.gz']))
+                            s3_paths.append('/'.join([s3_prefix, 'derivatives', participant, session, scan, '_'.join([participant, session, SERIES_MAP[serie], 'recording-despiked', 'physio'])+'.json']))
+                            if serie == 'MASK':
+                                s3_paths.append('/'.join([s3_prefix, 'derivatives', participant, session, scan, '_'.join([participant, session, SERIES_MAP[serie], 'bold'])+'.nii.gz']))
+                                s3_paths.append('/'.join([s3_prefix, 'derivatives', participant, session, scan, '_'.join([participant, session, SERIES_MAP[serie], 'bold'])+'.json']))
+                                continue
+                        elif serie == 'MASK':
+                            continue
                         s3_paths.append('/'.join([s3_prefix, participant, session, scan, '_'.join([participant, session, SERIES_MAP[serie], 'bold'])+'.nii.gz']))
                         s3_paths.append('/'.join([s3_prefix, participant, session, scan, '_'.join([participant, session, SERIES_MAP[serie], 'bold'])+'.json']))
                         s3_paths.append('/'.join([s3_prefix, participant, session, scan, '_'.join([participant, session, SERIES_MAP[serie], 'events'])+'.tsv']))
                         s3_paths.append('/'.join([s3_prefix, participant, session, scan, '_'.join([participant, session, SERIES_MAP[serie], 'physio'])+'.tsv.gz']))
                         s3_paths.append('/'.join([s3_prefix, participant, session, scan, '_'.join([participant, session, SERIES_MAP[serie], 'physio'])+'.json']))
                 elif scan == 'dwi':
+                    if derivatives:
+                        s3_paths.append('/'.join([s3_prefix, 'derivatives', participant, session, scan, '_'.join([participant, session, 'dwi', 'recording-despiked', 'physio'])+'.tsv.gz']))
+                        s3_paths.append('/'.join([s3_prefix, 'derivatives', participant, session, scan, '_'.join([participant, session, 'dwi', 'recording-despiked', 'physio'])+'.json']))
                     s3_paths.append('/'.join([s3_prefix, participant, session, scan, '_'.join([participant, session, 'dwi'])+'.nii.gz']))
                     s3_paths.append('/'.join([s3_prefix, participant, session, scan, '_'.join([participant, session, 'dwi'])+'.bval']))
                     s3_paths.append('/'.join([s3_prefix, participant, session, scan, '_'.join([participant, session, 'dwi'])+'.bvec']))
@@ -206,13 +223,26 @@ def collect_and_download(out_dir,
                     s3_paths.append('/'.join([s3_prefix, participant, session, scan, '_'.join([participant, session, 'phasediff'])+'.nii.gz']))
                     s3_paths.append('/'.join([s3_prefix, participant, session, scan, '_'.join([participant, session, 'phasediff'])+'.json']))
 
+    if len(participants_df) == 0:
+        print 'No participants meet the criteria given.  No download will be initiated.'
+        return
+
     # Remove the files that don't exist by iterating through the list and trying to fetch them.
-    for url in s3_paths:
-        if urllib.urlopen(url).getcode() == 404:
+    urls = [url for url in s3_paths]
+    for url in urls:
+        try:
+            url_head = urllib.urlopen(url).readline()
+            if 'xml' in url_head:
+                s3_paths.remove(url)
+        except Exception as exc:
+            print 'Problem determining if %s is a valid file to download:'
+            print exc
+            print 'Removing for now.  Re-run script to retry.'
             s3_paths.remove(url)
 
     # And download the items
     total_num_files = len(s3_paths)
+    files_downloaded = len(s3_paths)
     for path_idx, s3_path in enumerate(s3_paths):
         rel_path = s3_path.replace(s3_prefix, '')
         rel_path = rel_path.lstrip('/')
@@ -231,31 +261,33 @@ def collect_and_download(out_dir,
                           (100*(float(path_idx+1)/total_num_files))
             else:
                 print 'File %s already exists, skipping...' % download_file
-                total_num_files -= 1
+                files_downloaded -= 1
         except Exception as exc:
             print 'There was a problem downloading %s.\n'\
                   'Check input arguments and try again.' % s3_path
             print exc
     # Print all done
-    print '%d files downloaded / would be downloaded.' % total_num_files
+    print '%d files downloaded / would be downloaded for %d participant(s).' % (total_num_files,len(participants_df))
     print 'Done!'
 
     if not dryrun:
         print 'Saving out revised participants.tsv and session tsv files.'
-        # Save out revised participants.tsv to output directory, if a participants.tsv already exists, open it and merge with the new one.
+        # Save out revised participants.tsv to output directory, if a participants.tsv already exists, open it and append it to the new one.
         if os.path.isfile(os.path.join(out_dir, 'participants.tsv')):
             old_participants_df = pandas.read_csv(os.path.join(out_dir, 'participants.tsv'), delimiter='\t', na_values=['n/a', 'N/A'])
-            participants_df = pandas.merge(old_participants_df, participants_df, on='participant_id')
+            participants_df=participants_df.append(old_participants_df, ignore_index=True)
+            participants_df.drop_duplicates(inplace=True)
             os.remove(os.path.join(out_dir, 'participants.tsv'))
         participants_df.to_csv(os.path.join(out_dir, 'participants.tsv'), sep="\t", na_rep="n/a", index=False)
 
         # Save out revised session tsvs to output directory; if already exists, open it and merge with the new one.
         for participant in participant_sessions.keys():
             sessions_df = participant_sessions[participant]
-           # Save out revised sessions tsv to output directory, if a sessions tsv already exists, open it and merge with the new one.
+           # Save out revised sessions tsv to output directory, if a sessions tsv already exists, open it and append it to the new one.
             if os.path.isfile(os.path.join(out_dir, participant, participant+'_sessions.tsv')):
                 old_sessions_df = pandas.read_csv(os.path.join(out_dir, participant, participant+'_sessions.tsv'), delimiter='\t', na_values=['n/a', 'N/A'])
-                sessions_df = pandas.merge(old_sessions_df, sessions_df, on='session_id')
+                sessions_df=sessions_df.append(old_sessions_df, ignore_index=True)
+                sessions_df.drop_duplicates(inplace=True)
                 os.remove(os.path.join(out_dir, participant, participant+'_sessions.tsv'))
             sessions_df.to_csv(os.path.join(out_dir, participant, participant+'_sessions.tsv'), sep="\t", na_rep="n/a", index=False)
         print 'Done!'
@@ -279,48 +311,74 @@ if __name__ == '__main__':
                                          'particpants to download (e.g. for '\
                                          'subjects 30 or younger, \'-lt 31\')')
     parser.add_argument('-gt', '--greater_than', required=False,
-                        type=int, help='Lower age threshold (in years) of '\
+                        type=float, help='Lower age threshold (in years) of '\
                                        'particpants to download (e.g. for '\
                                        'subjects 31 or older, \'-gt 30\')')
     parser.add_argument('-x', '--sex', required=False, type=str,
                         help='Participant sex of interest to download only '\
                              '(e.g. \'M\' or \'F\')')
+    parser.add_argument('-m', '--handedness', required=False, type=str,
+                        help='Participant handedness to download only '\
+                             '(e.g. \'R\' or \'L\')')
+    parser.add_argument('-v', '--sessions', required=False, nargs='*', type=str,
+                        help='A space-separated list of session (visit) codes '\
+                             'to download (e.g. \'NFB3\',\'CLG2\')')
+    parser.add_argument('-t', '--scans', required=False, nargs='*', type=str,
+                        help='A space-separated list of scan types '\
+                             'to download (e.g. \'anat\',\'dwi\')')
+    parser.add_argument('-e', '--series', required=False, nargs='*', type=str,
+                        help='A space-separated list of series codes '\
+                             'to download (e.g. \'DMNTRACKINGTRAIN\',\'DMNTRACKINGTEST\')')
+    parser.add_argument('-d', '--derivatives', required=False, action='store_true',
+                        help='Download derivatives (despiked physio, masks) in addition to raw data?')
+    parser.add_argument('-n', '--dryrun', required=False, action='store_true',
+                        help='Perform a dry run to see how many files would be downloaded.')
 
     # Parse and gather arguments
     args = parser.parse_args()
 
     # Init variables
     out_dir = os.path.abspath(args.out_dir)
-
-    # Try and init optional arguments
-    try:
-        less_than = args.less_than
-        print 'Using upper age threshold of %d...' % less_than
-    except TypeError as exc:
-        less_than = 200.0
+    kwargs = {}
+    if args.less_than:
+        kwargs['less_than'] = args.less_than
+        print 'Using upper age threshold of %d...' % kwargs['less_than']
+    else:
         print 'No upper age threshold specified'
-    try:
-        greater_than = args.greater_than
-        print 'Using lower age threshold of %d...' % less_than
-    except TypeError as exc:
-        greater_than = -1.0
+    if args.greater_than:
+        kwargs['greater_than'] = args.greater_than
+        print 'Using lower age threshold of %d...' % kwargs['less_than']
+    else:
         print 'No lower age threshold specified'
-    try:
-        site = args.site
-    except TypeError as exc:
-        site = None
-        print 'No site specified, using all sites...'
-    try:
-        sex = args.sex.upper()
-        if sex == 'M':
-            print 'Downloading only male subjects...'
-        elif sex == 'F':
-            print 'Downloading only female subjects...'
-        else:
-            print 'Please specify \'M\' or \'F\' for sex and try again'
-            sys.exit()
-    except TypeError as exc:
-        sex = None
+    if args.sex:
+        kwargs['sex'] = args.sex.upper()
+        if kwargs['sex'] == 'M':
+            print 'Downloading only male participants...'
+        elif kwargs['sex'] == 'F':
+            print 'Downloading only female participants...'
+    else:
         print 'No sex specified, using all sexes...'
+    if args.handedness:
+        kwargs['handedness'] = args.handedness.upper()
+        if kwargs['handedness'] == 'R':
+            print 'Downloading only right-handed participants...'
+        elif kwargs['handedness'] == 'L':
+            print 'Downloading only left-handed participants...'
+    if args.sessions:
+        kwargs['sessions'] = args.sessions
+        print 'Sessions to download: ' + ' '.join(kwargs['sessions'])
+    if args.scans:
+        kwargs['scans'] = args.scans
+        print 'Scans to download: ' + ' '.join(kwargs['scans'])
+    if args.series:
+        kwargs['series'] = args.series
+        print 'Series to download: ' + ' '.join(kwargs['series'])
+    if args.derivatives:
+        kwargs['derivatives'] = args.derivatives
+        print 'Data derivatives will be downloaded.'
+    if args.dryrun:
+        kwargs['dryrun'] = args.dryrun
+        print 'Running download as a dry run.'
 
     # Call the collect and download routine
+    collect_and_download(out_dir, **kwargs)
