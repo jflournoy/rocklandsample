@@ -1,0 +1,92 @@
+Using the S3 Data Downloader for the Rockland Sample-NKI Lite Release
+----------------------------------------------------------------------
+
+#TODO Add link
+You can use a Python script located here to download the data as well.  This script includes a number of options so that you can download a customized subset of the sample for your needs.  In particular, it allows you to specify:
+
+ * Age Ranges
+ * Sex
+ * Handedness
+ * Visit
+ * Scan Type 
+ * Series
+ * Whether or not to download some derivatives of the raw data (such as despiked physiological data collected alongside series or a mask used in the real-time neurofeedback study).
+
+The visit names must be specified as one of the following visit codes:
+
+ * Real-Time Neurofeedback
+     * NFB2 - Visit 2 of the study.
+     * NFB2R - Visit 2 re-visit.
+     * NFBR2 - An alternative code for visit 2 re-visit.
+     * NFBR2A - Visit 2 re-visit A.
+     * NFB3 - Visit 3.
+     * NFBA - Visit A.
+     * NFBAR - Visit A re-visit.
+ * Cross-Sectional Lifespan Connectomics
+     * DS2 - Visit 2 of the study.
+     * DSA - Visit A of the study.
+ * Longitudinal Developmental Connectomics
+     * CLG - Visit 1 for all studies.
+     * CLGA - Visit A.
+     * CLGR - Visit 1 re-visit.
+     * CLG2 - Visit 2 of the study.
+     * CLG2A - Visit 2 A.
+     * CLG2R - Visit 2 re-visit.
+     * CLG3 - Visit 3 of the study.
+     * CLG4 - Visit 4 of the study.
+     * CLG4R - Visit 4 re-visit.
+     * CLG5 - Visit 5 of the study.
+
+Example:
+
+python download_rockland_raw_bids.py -o /data/output -v CLG4 CLG4R CLG5  
+
+This will download all of the files for the cross-sectional lifespan connectomics study for the 4th and 5th visits and store them in /data/output in BIDS format.
+
+Multiple scan types, separated by spaces after the scan type parameter, can be selected.  These scan types can take on the following values:
+
+ * anat - Anatomical scans.
+ * func - Functional/resting-state scans.
+ * dwi - DTI scans.
+ * fmap - Field map scans.
+
+Example:
+
+python download_rockland_raw_bids.py -o /data/output -t anat dwi
+
+This will download all of the anatomical and dti data only across all visits.
+
+Similarly, multiple series can be specified at the command line.  These series can take on the following values:
+
+ * CHECKERBOARD1400
+ * CHECKERBOARD645
+ * RESTCAP
+ * REST1400
+ * BREATHHOLD1400
+ * REST645
+ * RESTPCASL
+ * DMNTRACKINGTEST
+ * DMNTRACKINGTRAIN
+ * MASK
+ * MSIT
+ * PEER1
+ * PEER2
+ * MORALDILEMMA
+
+Example:
+
+python download_rockland_raw_bids.py -o /data/output -e REST645 DMNTRACKINGTRAIN
+
+This will download only the data for these two series across all participants and visits.
+
+Toggling the derivatives flag will also download the derivatives.
+
+Example:
+
+python download_rockland_raw_bids.py -o /data/output -d
+
+This will download all of the data, as well as the derivatives (which aren't downloaded by default).
+
+To get more information on all of the parameters you may use, type:
+
+python download_rockland_raw_bids.py -h
