@@ -92,7 +92,7 @@ def collect_and_download(out_dir,
             series.remove(serie)
 
     # If output path doesn't exist, create it
-    if not os.path.exists(out_dir):
+    if not os.path.exists(out_dir) and not dryrun:
         print 'Could not find %s, creating now...' % out_dir
         os.makedirs(out_dir)
 
@@ -248,7 +248,7 @@ def collect_and_download(out_dir,
         rel_path = rel_path.lstrip('/')
         download_file = os.path.join(out_dir, rel_path)
         download_dir = os.path.dirname(download_file)
-        if not os.path.exists(download_dir):
+        if not os.path.exists(download_dir) and not dryrun:
             os.makedirs(download_dir)
         try:
             if not os.path.exists(download_file):
@@ -267,7 +267,10 @@ def collect_and_download(out_dir,
                   'Check input arguments and try again.' % s3_path
             print exc
     # Print all done
-    print '%d files downloaded / would be downloaded for %d participant(s).' % (total_num_files,len(participants_df))
+    if dryrun:
+        print '%d files would be downloaded for %d participant(s).' % (files_downloaded,len(participants_df))
+    else:
+        print '%d files downloaded for %d participant(s).' % (files_downloaded,len(participants_df))
     print 'Done!'
 
     if not dryrun:
@@ -347,7 +350,7 @@ if __name__ == '__main__':
         print 'No upper age threshold specified'
     if args.greater_than:
         kwargs['greater_than'] = args.greater_than
-        print 'Using lower age threshold of %d...' % kwargs['less_than']
+        print 'Using lower age threshold of %d...' % kwargs['greater_than']
     else:
         print 'No lower age threshold specified'
     if args.sex:
@@ -356,6 +359,10 @@ if __name__ == '__main__':
             print 'Downloading only male participants...'
         elif kwargs['sex'] == 'F':
             print 'Downloading only female participants...'
+        else:
+            print 'Input for sex \'%s\' was not \'M\' or \'F\'.' % kwargs['sex']
+            print 'Please check script syntax and try again.'
+            sys.exit(1)
     else:
         print 'No sex specified, using all sexes...'
     if args.handedness:
@@ -364,14 +371,33 @@ if __name__ == '__main__':
             print 'Downloading only right-handed participants...'
         elif kwargs['handedness'] == 'L':
             print 'Downloading only left-handed participants...'
+        else:
+            print 'Input for handedness \'%s\' was not \'L\' or \'R\'.' % kwargs['handedness']
+            print 'Please check script syntax and try again.'
+            sys.exit(1)
     if args.sessions:
         kwargs['sessions'] = args.sessions
+        for session in kwargs['sessions']:
+            if session not in SESSIONS:
+                print 'Session \'%s\' is not a valid session name.' % session
+                print 'Please check script syntax and try again.'
+                sys.exit(1)
         print 'Sessions to download: ' + ' '.join(kwargs['sessions'])
     if args.scans:
         kwargs['scans'] = args.scans
+        for scan in kwargs['scans']:
+            if scan not in SCANS:
+                print 'Scan \'%s\' is not a valid scan name.' % scan
+                print 'Please check script syntax and try again.'
+                sys.exit(1)
         print 'Scans to download: ' + ' '.join(kwargs['scans'])
     if args.series:
         kwargs['series'] = args.series
+        for series in kwargs['series']:
+            if series not in SERIES_MAP.keys():
+                print 'Series \'%s\' is not a valid series name.' % series
+                print 'Please check script syntax and try again.'
+                sys.exit(1)
         print 'Series to download: ' + ' '.join(kwargs['series'])
     if args.derivatives:
         kwargs['derivatives'] = args.derivatives
