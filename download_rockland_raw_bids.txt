@@ -1,8 +1,7 @@
 Using the S3 Data Downloader for the Rockland Sample-NKI Lite Release
 ----------------------------------------------------------------------
 
-#TODO Add link
-You can use a Python script located here to download the data as well.  This script includes a number of options so that you can download a customized subset of the sample for your needs.  In particular, it allows you to specify:
+You can use a Python script located `here <https://raw.githubusercontent.com/FCP-INDI/rocklandsample/master/download_rockland_raw_bids.py>`_ to download the data as well.  This script includes a number of options so that you can download a customized subset of the sample for your needs.  In particular, it allows you to specify:
 
  * Age Ranges
  * Sex
@@ -12,7 +11,14 @@ You can use a Python script located here to download the data as well.  This scr
  * Series
  * Whether or not to download some derivatives of the raw data (such as despiked physiological data collected alongside series or a mask used in the real-time neurofeedback study).
 
-The visit names must be specified as one of the following visit codes:
+If none of these items are specified, the script will assume that you would like to download all available raw NKI-RS Lite release data without derivatives.
+
+*Note:* All examples in this section assume some literacy with the Unix command line and that the commands are being executed from the local directory where the script is stored.  If you have not used the command line before, a number of tutorials to get you started are linked to `here <http://fcp-indi.github.io/docs/user/install.html#a-note-about-the-nix-command-line>`_.
+
+Visit Codes
+^^^^^^^^^^^
+
+If you want to specify which visits to download, the visit numbers must be input as one of the following visit codes:
 
  * Real-Time Neurofeedback
      * NFB2 - Visit 2 of the study.
@@ -37,24 +43,34 @@ The visit names must be specified as one of the following visit codes:
      * CLG4R - Visit 4 re-visit.
      * CLG5 - Visit 5 of the study.
 
-Example:
+For example:
 
-python download_rockland_raw_bids.py -o /data/output -v CLG4 CLG4R CLG5  
+.. code-block:: bash
 
-This will download all of the files for the cross-sectional lifespan connectomics study for the 4th and 5th visits and store them in /data/output in BIDS format.
+    python download_rockland_raw_bids.py -o /data/output -v CLG4 CLG4R CLG5  
 
-Multiple scan types, separated by spaces after the scan type parameter, can be selected.  These scan types can take on the following values:
+This will download all of the files for the cross-sectional lifespan connectomics study for the 4th and 5th visits and store them in /data/output in `BIDS format <http://bids.neuroimaging.io>`_.
+
+Scan Types
+^^^^^^^^^^^
+
+Multiple scan types, separated by spaces after the scan type parameter, can be selected.  These scan types can take on the following values, which come from the BIDS specification:
 
  * anat - Anatomical scans.
  * func - Functional/resting-state scans.
  * dwi - DTI scans.
- * fmap - Field map scans.
+ * fmap - Field map scans (NFB3 only)
 
-Example:
+For example:
 
-python download_rockland_raw_bids.py -o /data/output -t anat dwi
+.. code-block:: bash
+
+    python download_rockland_raw_bids.py -o /data/output -t anat dwi
 
 This will download all of the anatomical and dti data only across all visits.
+
+Series Codes
+^^^^^^^^^^^^
 
 Similarly, multiple series can be specified at the command line.  These series can take on the following values:
 
@@ -73,19 +89,32 @@ Similarly, multiple series can be specified at the command line.  These series c
  * PEER2
  * MORALDILEMMA
 
-Example:
+For example:
 
-python download_rockland_raw_bids.py -o /data/output -e REST645 DMNTRACKINGTRAIN
+.. code-block:: bash
+
+    python download_rockland_raw_bids.py -o /data/output -e REST645 DMNTRACKINGTRAIN
 
 This will download only the data for these two series across all participants and visits.
 
-Toggling the derivatives flag will also download the derivatives.
+Toggling the derivatives flag will download the derivatives.
 
 Example:
 
 python download_rockland_raw_bids.py -o /data/output -d
 
 This will download all of the data, as well as the derivatives (which aren't downloaded by default).
+
+An Elaborate Example
+^^^^^^^^^^^^^^^^^^^^
+
+Here is a more complex example of the downloader script's syntax, which illustrates how you can combine command line options to generate extremely nuanced subsets of the Rockland sample.
+
+.. code-block:: bash
+
+    python download_rockland_raw_bids.py -o /data/output -e REST645 -v CLG4 CLG4R CLG5 -t anat func -gt 15 -lt 40 -m L -x F
+
+This code would download all anatomical series and all resting state series with a 645 ms TR for the fourth and fifth visits for the longitudinal developmental connectomics study, for left-handed women between the ages of 15 and 40.
 
 To get more information on all of the parameters you may use, type:
 
