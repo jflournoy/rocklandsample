@@ -1,58 +1,60 @@
-Using the S3 Data Downloader for the Rockland Sample-NKI Lite Release
-----------------------------------------------------------------------
+Using the Rockland Sample Downloader Script for S3
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-You can use a Python script located `here <https://raw.githubusercontent.com/FCP-INDI/rocklandsample/master/download_rockland_raw_bids.py>`_ to download the data as well.  This script includes a number of options so that you can download a customized subset of the sample for your needs.  In particular, it allows you to specify:
+This Python script allows you to specify a number of options so to download a customized subset of the sample from the S3 bucket.  In particular, it allows you to specify:
 
  * Age Ranges
  * Sex
  * Handedness
- * Visit
+ * Study and Visit
  * Scan Type 
  * Series
  * Whether or not to download some derivatives of the raw data (such as despiked physiological data collected alongside series or a mask used in the real-time neurofeedback study).
 
 If none of these items are specified, the script will assume that you would like to download all available raw NKI-RS Lite release data without derivatives.
 
-*Note:* All examples in this section assume some literacy with the Unix command line and that the commands are being executed from the local directory where the script is stored.  If you have not used the command line before, a number of tutorials to get you started are linked to `here <http://fcp-indi.github.io/docs/user/install.html#a-note-about-the-nix-command-line>`_.
+*Note:* All examples in this section assume some literacy with the Unix command line and that the commands are being executed from the local directory where the script is stored.  If you have not used the command line before, a number of tutorials to get you started are linked to here (http://fcp-indi.github.io/docs/user/install.html#a-note-about-the-nix-command-line).
 
-Visit Codes
-^^^^^^^^^^^
+Study / Visit Codes
+====================
 
-If you want to specify which visits to download, the visit numbers must be input as one of the following visit codes:
+If you want to specify which studies / visits to download, you must take a study code and append the desired visit code to it, and then add this after the *-v* option.  You may specify multiple study/visit code combinations after this option.
 
  * Real-Time Neurofeedback
-     * NFB2 - Visit 2 of the study.
-     * NFB2R - Visit 2 re-visit.
-     * NFBR2 - An alternative code for visit 2 re-visit.
-     * NFBR2A - Visit 2 re-visit A.
-     * NFB3 - Visit 3.
-     * NFBA - Visit A.
-     * NFBAR - Visit A re-visit.
+  * Study Code: NFB
+  * Visit Codes:
+   * 2 - The second visit (original 2-day scheduling format).
+   * 2R - A re-visit to complete scans for the second visit (original 2-day scheduling format).
+   * A - The abridged second visit (abridged scheduling format).
+   * AR - A re-visit to complete scans for the abridged second visit (abridged scheduling format).
+   * 3 - The third visit.
  * Cross-Sectional Lifespan Connectomics
-     * DS2 - Visit 2 of the study.
-     * DSA - Visit A of the study.
+  * Study Code: DS
+  * Visit Codes:
+   * 2 - The second visit (original 2-day scheduling format).
+   * A - The abridged second visit (abridged scheduling format).
  * Longitudinal Developmental Connectomics
-     * CLG - Visit 1 for all studies.
-     * CLGA - Visit A.
-     * CLGR - Visit 1 re-visit.
-     * CLG2 - Visit 2 of the study.
-     * CLG2A - Visit 2 A.
-     * CLG2R - Visit 2 re-visit.
-     * CLG3 - Visit 3 of the study.
-     * CLG4 - Visit 4 of the study.
-     * CLG4R - Visit 4 re-visit.
-     * CLG5 - Visit 5 of the study.
+  * Study Code: CLG 
+  * Visit Codes:
+   * 2 - The second visit (original 2-day scheduling format).
+   * A - The abridged second visit (abridged scheduling format).
+   * 2R -  The second visit (original scheduling format) with a re-test.
+   * AR -  The abridged second visit (abridged scheduling format) with a re-test.
+   * 3 - The third visit.
+   * 4 - The fourth visit.
+   * 4R - The fourth visit with a re-test.
+   * 5 - The fifth visit.
+
+Note that in the real-time neurofeedback study, 'R' signifies a re-visit, while in the longitudinal developmental connectomics study, it represents a re-test.
 
 For example:
 
-.. code-block:: bash
-
     python download_rockland_raw_bids.py -o /data/output -v CLG4 CLG4R CLG5  
 
-This will download all of the files for the cross-sectional lifespan connectomics study for the 4th and 5th visits and store them in /data/output in `BIDS format <http://bids.neuroimaging.io>`_.
+This will download all of the files for the cross-sectional lifespan connectomics study for the 4th and 5th visits and store them in /data/output in BIDS format (http://bids.neuroimaging.io).
 
 Scan Types
-^^^^^^^^^^^
+===========
 
 Multiple scan types, separated by spaces after the scan type parameter, can be selected.  These scan types can take on the following values, which come from the BIDS specification:
 
@@ -63,59 +65,56 @@ Multiple scan types, separated by spaces after the scan type parameter, can be s
 
 For example:
 
-.. code-block:: bash
-
     python download_rockland_raw_bids.py -o /data/output -t anat dwi
 
 This will download all of the anatomical and dti data only across all visits.
 
 Series Codes
-^^^^^^^^^^^^
+============
 
 Similarly, multiple series can be specified at the command line.  These series can take on the following values:
 
- * CHECKERBOARD1400
- * CHECKERBOARD645
- * RESTCAP
- * REST1400
- * BREATHHOLD1400
- * REST645
- * RESTPCASL
- * DMNTRACKINGTEST
- * DMNTRACKINGTRAIN
- * MASK
- * MSIT
- * PEER1
- * PEER2
- * MORALDILEMMA
+ * Non-neurofeedback studies:
+  * REST645
+  * REST1400
+  * RESTCAP
+  * RESTPCASL
+  * CHECKERBOARD645
+  * BREATHHOLD1400
+  * CHECKERBOARD1400
+ * Neurofeedback:
+  * DMNTRACKINGTRAIN
+  * DMNTRACKINGTEST
+  * MASK
+  * MORALDILEMMA
+  * MSIT
+  * PEER1
+  * PEER2
 
 For example:
-
-.. code-block:: bash
 
     python download_rockland_raw_bids.py -o /data/output -e REST645 DMNTRACKINGTRAIN
 
 This will download only the data for these two series across all participants and visits.
 
-Toggling the derivatives flag will download the derivatives.
+Derivatives
+============
 
-Example:
+Toggling the derivatives flag will download the mask used for the real-time neurofeedback study and despiked physiological data in addition to any other data that fit the other given criteria.
 
-python download_rockland_raw_bids.py -o /data/output -d
+For example, the following command will download all Rockland sample data plus the aforementioned derivatives:
 
-This will download all of the data, as well as the derivatives (which aren't downloaded by default).
+    python download_rockland_raw_bids.py -o /data/output -d
 
 An Elaborate Example
-^^^^^^^^^^^^^^^^^^^^
+====================
 
 Here is a more complex example of the downloader script's syntax, which illustrates how you can combine command line options to generate extremely nuanced subsets of the Rockland sample.
 
-.. code-block:: bash
+    python download_rockland_raw_bids.py -o /data/output -e REST645 -v DSA DS2 NFBAR NFB2R -t anat func -gt 15 -lt 40 -m L -x F
 
-    python download_rockland_raw_bids.py -o /data/output -e REST645 -v CLG4 CLG4R CLG5 -t anat func -gt 15 -lt 40 -m L -x F
-
-This code would download all anatomical series and all resting state series with a 645 ms TR for the fourth and fifth visits for the longitudinal developmental connectomics study, for left-handed women between the ages of 15 and 40.
+This command would download all anatomical series and all resting state series with a 645 ms TR for left-handed women between the ages of 15 and 40, but only from the abridged and second visits of the discovery science and neurofeedback studies.  This data could be used to assess within-subject variations in connectivity and neuroanatomy for this specific population, since the first visit for the discovery science and neurofeedback protocols are identical.
 
 To get more information on all of the parameters you may use, type:
 
-python download_rockland_raw_bids.py -h
+    python download_rockland_raw_bids.py -h
