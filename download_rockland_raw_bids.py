@@ -43,7 +43,7 @@ def collect_and_download(out_dir,
                          derivatives=False,
                          dryrun=False):
     '''
-    Function to collect and download images from the ABIDE preprocessed
+    Function to collect and download images from the Rockland sample 
     directory on FCP-INDI's S3 bucket
 
     Parameters
@@ -79,6 +79,10 @@ def collect_and_download(out_dir,
     import urllib
     import boto3
     import botocore
+    # For anonymous access to the bucket.
+    from botocore import UNSIGNED
+    from botocore.client import Config
+    from botocore.handlers import disable_signing
     import pandas
 
     # Init variables
@@ -87,6 +91,7 @@ def collect_and_download(out_dir,
 
     # Fetch bucket
     s3 = boto3.resource('s3')
+    s3.meta.client.meta.events.register('choose-signer.s3.*', disable_signing)	
     s3_bucket = s3.Bucket(s3_bucket_name)
 
     # Remove series that aren't in the series map keys.
@@ -98,7 +103,7 @@ def collect_and_download(out_dir,
         os.makedirs(out_dir)
 
     # Load the participants.tsv file from S3
-    s3_client = boto3.client('s3')
+    s3_client = boto3.client('s3', config=Config(signature_version=UNSIGNED))
     participants_obj = s3_client.get_object(Bucket=s3_bucket_name, Key = '/'.join([s3_prefix,'participants.tsv']))
     participants_df = pandas.read_csv(participants_obj['Body'], delimiter='\t', na_values=['n/a'])
 
@@ -148,41 +153,39 @@ def collect_and_download(out_dir,
     s3_keylist.append('/'.join([s3_prefix, 'README']))
     s3_keylist.append('/'.join([s3_prefix, 'dataset_description.json']))
 
-    print s3_keylist
+    # And download the items
+    total_num_files = len(s3_keylist)
+    files_downloaded = len(s3_keylist)
+    for path_idx, s3_path in enumerate(s3_keylist):
+        rel_path = s3_path.replace(s3_prefix, '')
+        rel_path = rel_path.lstrip('/')
+        download_file = os.path.join(out_dir, rel_path)
+        download_dir = os.path.dirname(download_file)
+        if not os.path.exists(download_dir) and not dryrun:
+            os.makedirs(download_dir)
+        try:
+            if not os.path.exists(download_file):
+                if dryrun:
+                    print 'Would download to: %s' % download_file
+                else:
+                    print 'Downloading to: %s' % download_file
+                    with open(download_file, 'wb') as f:
+                        s3_client.download_fileobj(s3_bucket_name, s3_path, f)
+                    print '%.3f%% percent complete' % \
+                          (100*(float(path_idx+1)/total_num_files))
+            else:
+                print 'File %s already exists, skipping...' % download_file
+                files_downloaded -= 1
+        except Exception as exc:
+            print 'There was a problem downloading %s.\n'\
+                  'Check input arguments and try again.' % s3_path
+            print exc
+    # Print all done
+    if dryrun:
+        print '%d files would be downloaded for %d participant(s).' % (files_downloaded,len(participants_df))
+    else:
+        print '%d files downloaded for %d participant(s).' % (files_downloaded,len(participants_df))
 
-#    # And download the items
-#    total_num_files = len(s3_keylist)
-#    files_downloaded = len(s3_keylist)
-#    for path_idx, s3_path in enumerate(s3_paths):
-#        rel_path = s3_path.replace(s3_prefix, '')
-#        rel_path = rel_path.lstrip('/')
-#        download_file = os.path.join(out_dir, rel_path)
-#        download_dir = os.path.dirname(download_file)
-#        if not os.path.exists(download_dir) and not dryrun:
-#            os.makedirs(download_dir)
-#        try:
-#            if not os.path.exists(download_file):
-#                if dryrun:
-#                    print 'Would download to: %s' % download_file
-#                else:
-#                    print 'Downloading to: %s' % download_file
-#                    urllib.urlretrieve(s3_path, download_file)
-#                    print '%.3f%% percent complete' % \
-#                          (100*(float(path_idx+1)/total_num_files))
-#            else:
-#                print 'File %s already exists, skipping...' % download_file
-#                files_downloaded -= 1
-#        except Exception as exc:
-#            print 'There was a problem downloading %s.\n'\
-#                  'Check input arguments and try again.' % s3_path
-#            print exc
-#    # Print all done
-#    if dryrun:
-#        print '%d files would be downloaded for %d participant(s).' % (files_downloaded,len(participants_df))
-#    else:
-#        print '%d files downloaded for %d participant(s).' % (files_downloaded,len(participants_df))
-#    print 'Done!'
-#
 #    if not dryrun:
 #        print 'Saving out revised participants.tsv and session tsv files.'
 #        # Save out revised participants.tsv to output directory, if a participants.tsv already exists, open it and append it to the new one.
@@ -203,7 +206,7 @@ def collect_and_download(out_dir,
 #                sessions_df.drop_duplicates(inplace=True)
 #                os.remove(os.path.join(out_dir, participant, participant+'_sessions.tsv'))
 #            sessions_df.to_csv(os.path.join(out_dir, participant, participant+'_sessions.tsv'), sep="\t", na_rep="n/a", index=False)
-#        print 'Done!'
+    print 'Done!'
 
 # Make module executable
 if __name__ == '__main__':
