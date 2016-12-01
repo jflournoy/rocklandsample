@@ -76,14 +76,13 @@ def collect_and_download(out_dir,
         Returns true if the download was successful, false otherwise.
     '''
     # Import packages
-    import urllib
+    import pandas
     import boto3
     import botocore
     # For anonymous access to the bucket.
     from botocore import UNSIGNED
     from botocore.client import Config
     from botocore.handlers import disable_signing
-    import pandas
 
     # Init variables
     s3_bucket_name = 'fcp-indi'
@@ -131,24 +130,24 @@ def collect_and_download(out_dir,
         return
 
     # Generate a list of participants to filter on.
-    participants_filt = ['sub-'+label for label in participants_df['participant_id'].tolist()]
+    participants_filt = ['sub-'+ label + '/' for label in participants_df['participant_id'].tolist()]
 
     # Generate a list of sessions to filter on.
-    sessions_filt = ['ses-' + session for session in sessions]
+    sessions_filt = ['ses-' + session + '/' for session in sessions]
 
     # Generate a list of series to filter on.
     series_filt = [SERIES_MAP[s] for s in series]
-    
-    # Get JSONs.
-    #jsons = [key for key in s3_keylist for s in series_filt if s in key and 'json' in key]
 
+    # Fetch top-level JSONs first.
+    json_keylist = [key for key in s3_keylist for s in series_filt if s in key and 'json' in key and 'sub' not in key]
+   
     # Applying filters.
     s3_keylist = [key for key in s3_keylist for p in participants_filt if p in key]
     s3_keylist = [key for key in s3_keylist for s in sessions_filt if s in key]
     s3_keylist = [key for key in s3_keylist for s in series_filt if s in key]
 
     # Add back top-level files
-    #s3_keylist.extend(jsons)
+    s3_keylist.extend(json_keylist)
     s3_keylist.append('/'.join([s3_prefix, 'CHANGES']))
     s3_keylist.append('/'.join([s3_prefix, 'README']))
     s3_keylist.append('/'.join([s3_prefix, 'dataset_description.json']))
@@ -186,26 +185,33 @@ def collect_and_download(out_dir,
     else:
         print '%d files downloaded for %d participant(s).' % (files_downloaded,len(participants_df))
 
-#    if not dryrun:
-#        print 'Saving out revised participants.tsv and session tsv files.'
-#        # Save out revised participants.tsv to output directory, if a participants.tsv already exists, open it and append it to the new one.
-#        if os.path.isfile(os.path.join(out_dir, 'participants.tsv')):
-#            old_participants_df = pandas.read_csv(os.path.join(out_dir, 'participants.tsv'), delimiter='\t', na_values=['n/a', 'N/A'])
-#            participants_df=participants_df.append(old_participants_df, ignore_index=True)
-#            participants_df.drop_duplicates(inplace=True)
-#            os.remove(os.path.join(out_dir, 'participants.tsv'))
-#        participants_df.to_csv(os.path.join(out_dir, 'participants.tsv'), sep="\t", na_rep="n/a", index=False)
-#
-#        # Save out revised session tsvs to output directory; if already exists, open it and merge with the new one.
-#        for participant in participant_sessions.keys():
-#            sessions_df = participant_sessions[participant]
-#           # Save out revised sessions tsv to output directory, if a sessions tsv already exists, open it and append it to the new one.
-#            if os.path.isfile(os.path.join(out_dir, participant, participant+'_sessions.tsv')):
-#                old_sessions_df = pandas.read_csv(os.path.join(out_dir, participant, participant+'_sessions.tsv'), delimiter='\t', na_values=['n/a', 'N/A'])
-#                sessions_df=sessions_df.append(old_sessions_df, ignore_index=True)
-#                sessions_df.drop_duplicates(inplace=True)
-#                os.remove(os.path.join(out_dir, participant, participant+'_sessions.tsv'))
-#            sessions_df.to_csv(os.path.join(out_dir, participant, participant+'_sessions.tsv'), sep="\t", na_rep="n/a", index=False)
+    if not dryrun:
+        print 'Saving out revised participants.tsv and session tsv files.'
+        # Save out revised participants.tsv to output directory, if a participants.tsv already exists, open it and append it to the new one.
+        if os.path.isfile(os.path.join(out_dir, 'participants.tsv')):
+            old_participants_df = pandas.read_csv(os.path.join(out_dir, 'participants.tsv'), delimiter='\t', na_values=['n/a', 'N/A'])
+            participants_df = participants_df.append(old_participants_df, ignore_index=True)
+            participants_df.drop_duplicates(inplace=True)
+            os.remove(os.path.join(out_dir, 'participants.tsv'))
+        participants_df.to_csv(os.path.join(out_dir, 'participants.tsv'), sep="\t", na_rep="n/a", index=False)
+
+        # Separate list for sessions TSVs.
+        session_keylist = [key.key for key in s3_keys if 'sessions.tsv' in key.key]
+        session_keylist = [key for key in session_keylist for p in participants_filt if p in key]
+        # Save out revised session tsvs to output directory; if already exists, open it and merge with the new one.
+        for session_key in session_keylist:
+            participant = session_key.split('/')[-2]
+            sessions_obj = s3_client.get_object(Bucket=s3_bucket_name, Key=session_key )
+            sessions_df = pandas.read_csv(sessions_obj['Body'], delimiter='\t', na_values=['n/a'])
+            # Drop all sessions not in specified.
+            sessions_df = sessions_df[sessions_df['session_id'].isin(sessions_filt)]
+            # Save out revised sessions tsv to output directory, if a sessions tsv already exists, open it and append it to the new one.
+            if os.path.isfile(os.path.join(out_dir, participant, participant+'_sessions.tsv')):
+                old_sessions_df = pandas.read_csv(os.path.join(out_dir, participant, participant+'_sessions.tsv'), delimiter='\t', na_values=['n/a', 'N/A'])
+                sessions_df = sessions_df.append(old_sessions_df, ignore_index=True)
+                sessions_df.drop_duplicates(inplace=True)
+                os.remove(os.path.join(out_dir, participant, participant+'_sessions.tsv'))
+            sessions_df.to_csv(os.path.join(out_dir, participant, participant+'_sessions.tsv'), sep="\t", na_rep="n/a", index=False)
     print 'Done!'
 
 # Make module executable
