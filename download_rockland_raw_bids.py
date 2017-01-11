@@ -144,7 +144,8 @@ def collect_and_download(out_dir,
     # Applying filters.
     s3_keylist = [key for key in s3_keylist for p in participants_filt if p in key]
     s3_keylist = [key for key in s3_keylist for s in sessions_filt if s in key]
-    s3_keylist = [key for key in s3_keylist for s in series_filt if s in key]
+    s3_keylist = [key for key in s3_keylist for s in scans if s in key]
+    s3_keylist = [key for key in s3_keylist for s in series_filt if (s in key) or ('func' not in key) ]
 
     # Add back top-level files
     s3_keylist.extend(json_keylist)
