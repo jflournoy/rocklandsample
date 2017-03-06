@@ -119,45 +119,15 @@ completed_cln_aga_loc <- completed_with_age_cleaned %>%
   filter(data_path_exists)
 ```
 
-```{r}
-theme_update(panel.background = element_rect(fill = 'white'), 
-             axis.line=element_line(size=0),
-             strip.background=element_rect(fill='white'))
-
-subj_min_age <- completed_cln_aga_loc %>% 
-  group_by(sub) %>%
-  summarize(age = round(min(age),0), n = n()) %>%
-  ungroup() %>%
-  arrange(age, n)
-
-subject_range <- 1:dim(subj_min_age)[1]
-
-accelerated_design_plot <- completed_cln_aga_loc %>% 
-  ungroup %>%
-  mutate(sub = factor(sub, levels = subj_min_age$sub)) %>%
-  ggplot(aes(x = age, y = factor(as.numeric(sub)))) +
-  geom_line(alpha = .5, size = .25) + 
-  geom_point(size = .5, alpha = .5) + 
-  scale_x_continuous(breaks = c(seq(6, 22, 4))) +
-  scale_y_discrete(labels = ifelse(subject_range %in% c(min(subject_range), seq(0, 55, 20), max(subject_range)), subject_range, ''))+
-  theme() + 
-  labs(x = 'Age (years)', y = 'Participant ID')
-
-print(accelerated_design_plot)
-ggsave(filename = '/home/jflournoy/Documents/Notes/Projects/DCN_Special_Issue/Missingness/manuscript/rockland_data_pattern.pdf', 
-       plot = accelerated_design_plot, 
-       width = 6.5,
-       height = 4.5,
-       units = 'in')
-```
 
 ```{r}
-rockland_aparc2009 <- completed_cln_aga_loc %>% 
-  group_by(sub, session, age) %>%
+rockland_aparc2009 <- completed_cln_aga_loc %>%
+  arrange(sub, age) %>%
+  group_by(sub, session, age, n_obs_final) %>%
   do({
     col_names <- c('StructName', 'NumVert', 'SurfArea', 'GrayVol', 'ThickAvg', 'ThickStd', 'MeanCurv', 'GausCurv', 'FoldInd', 'CurvInd')
     tryCatch({
-      aDF.lh <- read_table(file.path(.$data_path[[1]], 'stats', 'lh.aparc.a2009s.stats'),
+      aDF.lh <- read_table(file.path(.$data_path[[1]], 'stats', 'lh.aparc.stats'),
                          skip = 60, 
                          col_names = col_names)
     }, error = function(e){
@@ -165,7 +135,7 @@ rockland_aparc2009 <- completed_cln_aga_loc %>%
       return(aDF.lh)
     })
     tryCatch({
-      aDF.rh <- read_table(file.path(.$data_path[[1]], 'stats', 'rh.aparc.a2009s.stats'),
+      aDF.rh <- read_table(file.path(.$data_path[[1]], 'stats', 'rh.aparc.stats'),
                          skip = 60, 
                          col_names = col_names)
     }, error = function(e){
@@ -178,3 +148,108 @@ rockland_aparc2009 <- completed_cln_aga_loc %>%
     return(aDF)
   })
 ```
+
+```{r}
+rockland_aparc2009_clean1 <- rockland_aparc2009 %>%
+  filter(is.null(error[[1]])) %>%
+  arrange(sub, age, StructName) %>%
+  ungroup() %>%
+  mutate(age = as.numeric(age),
+         age_c = age - mean(age),
+         age_c_2 = age_c^2,
+         ThickAvg = as.numeric(ThickAvg))
+
+age_diffs <- rockland_aparc2009_clean1 %>%
+  distinct(sub, session, age) %>%
+  group_by(sub) %>%
+  mutate(age_diff_raw = age - lag(age, n = 1),
+         age_diff = ifelse(is.na(age_diff_raw), 0, age_diff_raw))
+
+rockland_aparc2009_clean <- left_join(rockland_aparc2009_clean1, age_diffs)
+
+rockland_aparc2009_clean_cc <- rockland_aparc2009_clean %>%
+  group_by(sub) %>%
+  mutate(max_age_diff = max(age_diff)) %>%
+  filter(max_age_diff > 30/365)
+
+
+
+```
+
+```{r}
+theme_update(panel.background = element_rect(fill = 'white'), 
+             axis.line = element_line(size=0),
+             strip.background = element_rect(fill='white'),
+             legend.key = element_rect(fill='white'))
+
+plot_acc_design <- function(adf, adf_limited = NULL){
+  if(!is.null(adf_limited)){
+    sublist <- unique(adf_limited$sub)
+    adf <- adf %>%
+      mutate(Excluded = !sub %in% sublist)
+    point_aesthetic <- aes(x = age, y = factor(as.numeric(sub)), color = Excluded)
+  } else {
+    point_aesthetic <- aes(x = age, y = factor(as.numeric(sub)))
+  }
+  subj_min_age <- adf %>% 
+    group_by(sub) %>%
+    summarize(age = round(min(age),0), n = n()) %>%
+    ungroup() %>%
+    arrange(age, n)
+  
+  subject_range <- 1:dim(subj_min_age)[1]
+  
+  accelerated_design_plot <- adf %>% 
+    ungroup %>%
+    mutate(sub = factor(sub, levels = subj_min_age$sub)) %>%
+    ggplot(aes(x = age, y = factor(as.numeric(sub)))) +
+    scale_x_continuous(breaks = c(seq(6, 22, 4))) +
+    scale_y_discrete(labels = c(),
+                     breaks = c())+
+    geom_line(alpha = .5, size = .25) + 
+    geom_point(point_aesthetic, size = .5, alpha = .5) + 
+    theme() + 
+    labs(x = 'Age (years)', y = 'Participant')
+  
+  if(!is.null(adf_limited)){
+    accelerated_design_plot_final <- accelerated_design_plot +
+      scale_color_manual(values = c('black', 'red'),
+                         breaks = c(T), 
+                         labels = c('Excluded from\n"complete case"\nanalysis'),
+                         guide = guide_legend(override.aes = list(alpha = 1, size = 2), 
+                                              title = '',
+                                              label.position = 'right'))
+  } else {
+    accelerated_design_plot_final <- accelerated_design_plot
+  }
+  
+  return(accelerated_design_plot_final)
+}
+
+both_plot <- plot_acc_design(distinct(rockland_aparc2009_clean, sub, session, age, .keep_all = T), 
+                             distinct(rockland_aparc2009_clean_cc, sub, session, age, .keep_all = T))+
+  theme(legend.position = c(.85,.25))
+print(both_plot)
+
+clean_plot <- plot_acc_design(distinct(rockland_aparc2009_clean, sub, session, age, .keep_all = T))
+print(clean_plot)
+
+clean_cc_plot <- plot_acc_design(distinct(rockland_aparc2009_clean_cc, sub, session, age, .keep_all = T))
+print(clean_cc_plot)
+
+ggsave(filename = '/home/jflournoy/Documents/Notes/Projects/DCN_Special_Issue/Missingness/manuscript/rockland_data_pattern.pdf', 
+       plot = both_plot, 
+       width = 6.5,
+       height = 3,
+       units = 'in')
+```
+
+```{r}
+test_data <- rockland_aparc2009_clean %>% filter(StructName == 'cuneus', h == 'l') 
+
+library(lme4)
+aModel <- lmer(ThickAvg ~ 1 + age_c + age_c_2 + (1 | sub), data = test_data)
+summary(aModel)
+coef(aModel)$sub
+```
+
