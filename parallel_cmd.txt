@@ -1,0 +1,1 @@
+ls -d sub* | sed -r 's/sub-(.*)/\1/' | parallel ~/code/rocklandsample/bids_freesurfer.bash {}

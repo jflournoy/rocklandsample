@@ -1,0 +1,1 @@
+python download_rockland_raw_bids.py -lt 22 -v DS2 DSA CLGA CLGR CLG2R CLG2 CLG4 CLG4R CLG5 -t anat func -o /mnt/den-of-woot-data/jflournoy/rockland/
