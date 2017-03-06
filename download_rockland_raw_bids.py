@@ -168,6 +168,7 @@ def collect_and_download(out_dir,
         s3_sessions = '/'.join([s3_prefix, participant, session_tsv])
         # Load the session tsv file from S3
         try:
+            print 'Getting info from %s' % s3_sessions
             s3_sessions_file = urllib.urlopen(s3_sessions)
             sessions_df = pandas.read_csv(s3_sessions_file, delimiter='\t', na_values=['n/a', 'N/A'])
         except Exception as exc:
