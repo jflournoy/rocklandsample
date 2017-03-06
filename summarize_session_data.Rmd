@@ -98,42 +98,48 @@ session_data <- data_frame(sub = dir(path = mri_data_dir)) %>%
 ```
 
 ```{r}
-left_join(completed, session_data, by = c('sub'='sub', 'session'='session_id')) %>%
+completed_with_age <- left_join(completed, session_data, by = c('sub'='sub', 'session'='session_id')) %>%
   arrange(sub, age) %>%
   select(sub, session, session_old, session_id_old, age, everything())
 
+completed_with_age_cleaned <- completed_with_age %>%
+  filter(!is.na(age)) %>%
+  mutate(session_singular = session,
+         session = ifelse(session == 'singular', session_id_old, session_singular)) %>%
+  distinct(sub, session, age, .keep_all = T) %>%
+  group_by(sub) %>%
+  mutate(n_obs_final = n()) %>%
+  select(sub, session, age, long, n_obs_raw, n_obs_ppc, n_obs_final, session_singular)
 
-# session_data_cmplts <- session_data %>%
-#   filter(sub %in% completed_subs$sub)
-# 
-# raw_dir_age <- left_join(session_data_cmplts, raw_dirs, by = c('sub'='sub', 'session_id'='session')) %>%
-#   left_join(raw_data_dir_sum)
-# 
-# write_csv(raw_dir_age, path = file.path(derivs_dir, 'session_data_manual.csv'))
+completed_cln_aga_loc <- completed_with_age_cleaned %>%
+  mutate(data_path = ifelse(long, 
+                            file.path(derivs_dir, paste0(sub, '_', session, '.long.', sub)), 
+                            file.path(derivs_dir, paste0(sub))),
+         data_path_exists = dir.exists(data_path)) %>%
+  filter(data_path_exists)
 ```
 
 ```{r}
-
-manual_session_data <- read_csv(file = file.path(derivs_dir, 'session_data_manual_edited.csv'))
-
 theme_update(panel.background = element_rect(fill = 'white'), 
              axis.line=element_line(size=0),
              strip.background=element_rect(fill='white'))
 
-subj_min_age <- session_data %>% 
-  group_by(Subj) %>%
-  summarize(age = round(min(age),1), n = n()) %>%
+subj_min_age <- completed_cln_aga_loc %>% 
+  group_by(sub) %>%
+  summarize(age = round(min(age),0), n = n()) %>%
   ungroup() %>%
   arrange(age, n)
 
-accelerated_design_plot <- session_data %>% 
+subject_range <- 1:dim(subj_min_age)[1]
+
+accelerated_design_plot <- completed_cln_aga_loc %>% 
   ungroup %>%
-  mutate(Subj = factor(Subj, levels = subj_min_age$Subj)) %>%
-  ggplot(aes(x = age, y = factor(as.numeric(Subj)))) +
+  mutate(sub = factor(sub, levels = subj_min_age$sub)) %>%
+  ggplot(aes(x = age, y = factor(as.numeric(sub)))) +
   geom_line(alpha = .5, size = .25) + 
   geom_point(size = .5, alpha = .5) + 
   scale_x_continuous(breaks = c(seq(6, 22, 4))) +
-  scale_y_discrete(labels = c('82', rep('', 40), '41', rep('', 39),  '1'))+
+  scale_y_discrete(labels = ifelse(subject_range %in% c(min(subject_range), seq(0, 55, 20), max(subject_range)), subject_range, ''))+
   theme() + 
   labs(x = 'Age (years)', y = 'Participant ID')
 
@@ -145,3 +151,5 @@ ggsave(filename = '/home/jflournoy/Documents/Notes/Projects/DCN_Special_Issue/Mi
        units = 'in')
 ```
 
+```{r}
+completed_cln_aga_loc
