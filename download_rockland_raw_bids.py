@@ -43,7 +43,7 @@ def collect_and_download(out_dir,
                          derivatives=False,
                          dryrun=False):
     '''
-    Function to collect and download images from the ABIDE preprocessed
+    Function to collect and download images from the Rockland sample 
     directory on FCP-INDI's S3 bucket
 
     Parameters
@@ -76,20 +76,25 @@ def collect_and_download(out_dir,
         Returns true if the download was successful, false otherwise.
     '''
     # Import packages
-    import urllib
     import pandas
+    import boto3
+    import botocore
+    # For anonymous access to the bucket.
+    from botocore import UNSIGNED
+    from botocore.client import Config
+    from botocore.handlers import disable_signing
 
     # Init variables
-    s3_prefix = 'https://s3.amazonaws.com/fcp-indi/data/Projects/'\
-                'RocklandSample/RawDataBIDS'
-    s3_participants = '/'.join([s3_prefix, 'participants.tsv'])
+    s3_bucket_name = 'fcp-indi'
+    s3_prefix = 'data/Projects/RocklandSample/RawDataBIDS'
+
+    # Fetch bucket
+    s3 = boto3.resource('s3')
+    s3.meta.client.meta.events.register('choose-signer.s3.*', disable_signing)	
+    s3_bucket = s3.Bucket(s3_bucket_name)
 
     # Remove series that aren't in the series map keys.
-    for serie in series:
-        if serie not in SERIES_MAP.keys():
-            print 'Warning: %s not in series map.\
-                    Check orthography and re-run.' % serie
-            series.remove(serie)
+    series = [ s for s in series if s in SERIES_MAP.keys() ]
 
     # If output path doesn't exist, create it
     if not os.path.exists(out_dir) and not dryrun:
@@ -97,154 +102,61 @@ def collect_and_download(out_dir,
         os.makedirs(out_dir)
 
     # Load the participants.tsv file from S3
-    try:
-        s3_participants_file = urllib.urlopen(s3_participants)
-        participants_df = pandas.read_csv(s3_participants_file, delimiter='\t',
-                na_values=['n/a', 'N/A'])
-    except Exception as exc:
-        print 'Could not fetch participants.tsv file to begin download.\
-                Error below:'
-        print exc
+    s3_client = boto3.client('s3', config=Config(signature_version=UNSIGNED))
+    participants_obj = s3_client.get_object(Bucket=s3_bucket_name, Key = '/'.join([s3_prefix,'participants.tsv']))
+    participants_df = pandas.read_csv(participants_obj['Body'], delimiter='\t', na_values=['n/a'])
 
     # Init a list to store paths.
     print 'Collecting images of interest...'
-    s3_paths = []
-
-    # Add the top-level sidecar JSONs to the download list.
-    for scan in scans:
-        if scan == 'func':
-            for serie in series:
-                s3_paths.append('/'.join([s3_prefix,
-                    '_'.join([SERIES_MAP[serie], 'bold.json'])]))
-        elif scan == 'dwi':
-            s3_paths.append('/'.join([s3_prefix, 'dwi.json']))
-        elif scan == 'fmap':
-            s3_paths.append('/'.join([s3_prefix, 'phasediff.json']))
-
-    # Other top-level files
-    s3_paths.append('/'.join([s3_prefix, 'CHANGES']))
-    s3_paths.append('/'.join([s3_prefix, 'README']))
-    s3_paths.append('/'.join([s3_prefix, 'dataset_description.json']))
+    s3_keys = s3_bucket.objects.filter(Prefix=s3_prefix)
+    s3_keylist = [key.key for key in s3_keys]
 
     # Remove the participants for whom age range, handedness and sex do not conform to the criteria.
     if less_than:
-        age_lt_df = participants_df.where(participants_df['age'] < less_than)
+        participants_df = participants_df[participants_df['age'] < less_than]
     if greater_than:
-        age_gt_df = participants_df.where(participants_df['age'] > greater_than)
-    if less_than and greater_than:
-        participants_df = pandas.merge(age_lt_df, age_gt_df,
-                on=participants_df.columns.tolist())
-    elif less_than:
-        participants_df = age_lt_df
-    elif greater_than:
-        participants_df = age_gt_df
+        participants_df = participants_df[participants_df['age'] > greater_than]
     if sex == 'M':
-        participants_df.where(participants_df['sex'] == 'MALE', inplace=True)
+        participants_df = participants_df[participants_df['sex'] == 'MALE']
     elif sex == 'F':
-        participants_df.where(participants_df['sex'] == 'FEMALE', inplace=True)
+        participants_df = participants_df[participants_df['sex'] == 'FEMALE']
     if handedness == 'R':
-        participants_df.where(participants_df['handedness'] == 'RIGHT',
-                inplace=True)
+        participants_df = participants_df[participants_df['handedness'] == 'RIGHT']
     elif handedness == 'L':
-        participants_df.where(participants_df['handedness'] == 'LEFT',
-                inplace=True)
-    participants_df.dropna(inplace=True)
-
-    # Generate a dictionary of participants and their session TSVs.
-    participant_dirs = ['sub-'+label for label in participants_df['participant_id'].tolist()]
-    session_tsvs = [participant+'_sessions.tsv' for participant in participant_dirs]
-    participants = dict(zip(participant_dirs, session_tsvs))
-
-    # Add 'ses-' prefix to session names.
-    sessions = ['ses-' + session for session in sessions]
-
-    # Init a dictionary that will pair participants and their session TSVs as dataframes.
-    participant_sessions={}
-
-    # Create participant-level directories if they do not exist already.
-    for participant in participants.keys():
-        # Load every sessions tsv for each participant.
-        session_tsv = participants[participant]
-        s3_sessions = '/'.join([s3_prefix, participant, session_tsv])
-        # Load the session tsv file from S3
-        try:
-            print 'Getting info from %s' % s3_sessions
-            s3_sessions_file = urllib.urlopen(s3_sessions)
-            sessions_df = pandas.read_csv(s3_sessions_file, delimiter='\t', na_values=['n/a', 'N/A'])
-        except Exception as exc:
-            print 'Could not fetch sessions tsv file %s.\
-                    Error below:' % s3_sessions
-            print exc
-            print 'Skipping session'
-            continue
-
-        # Remove sessions that we do not want from sessions tsv.
-        sessions_df.where(sessions_df['session_id'].isin(sessions), inplace=True)
-        sessions_df.dropna(inplace=True)
-        # If there are no sessions of the desired type in this TSV, continue to the next particiapnt.
-        if len(sessions_df) == 0:
-            participants_df.where(participants_df['participant_id'] != participant.replace('sub-',''), inplace=True)
-            participants_df.dropna(inplace=True)
-            continue
-
-        participant_sessions[participant] = sessions_df
-
-        for session in sessions:
-            for scan in scans:
-                if scan == 'anat':
-                    s3_paths.append('/'.join([s3_prefix, participant, session, scan, '_'.join([participant, session, 'T1w'])+'.nii.gz']))
-                elif scan == 'func':
-                    for serie in series:
-                        if derivatives:
-                            s3_paths.append('/'.join([s3_prefix, 'derivatives', participant, session, scan, '_'.join([participant, session, SERIES_MAP[serie], 'recording-despiked', 'physio'])+'.tsv.gz']))
-                            s3_paths.append('/'.join([s3_prefix, 'derivatives', participant, session, scan, '_'.join([participant, session, SERIES_MAP[serie], 'recording-despiked', 'physio'])+'.json']))
-                            if serie == 'MASK':
-                                s3_paths.append('/'.join([s3_prefix, 'derivatives', participant, session, scan, '_'.join([participant, session, SERIES_MAP[serie], 'bold'])+'.nii.gz']))
-                                s3_paths.append('/'.join([s3_prefix, 'derivatives', participant, session, scan, '_'.join([participant, session, SERIES_MAP[serie], 'bold'])+'.json']))
-                                continue
-                        elif serie == 'MASK':
-                            continue
-                        s3_paths.append('/'.join([s3_prefix, participant, session, scan, '_'.join([participant, session, SERIES_MAP[serie], 'bold'])+'.nii.gz']))
-                        s3_paths.append('/'.join([s3_prefix, participant, session, scan, '_'.join([participant, session, SERIES_MAP[serie], 'bold'])+'.json']))
-                        s3_paths.append('/'.join([s3_prefix, participant, session, scan, '_'.join([participant, session, SERIES_MAP[serie], 'events'])+'.tsv']))
-                        s3_paths.append('/'.join([s3_prefix, participant, session, scan, '_'.join([participant, session, SERIES_MAP[serie], 'physio'])+'.tsv.gz']))
-                        s3_paths.append('/'.join([s3_prefix, participant, session, scan, '_'.join([participant, session, SERIES_MAP[serie], 'physio'])+'.json']))
-                elif scan == 'dwi':
-                    if derivatives:
-                        s3_paths.append('/'.join([s3_prefix, 'derivatives', participant, session, scan, '_'.join([participant, session, 'dwi', 'recording-despiked', 'physio'])+'.tsv.gz']))
-                        s3_paths.append('/'.join([s3_prefix, 'derivatives', participant, session, scan, '_'.join([participant, session, 'dwi', 'recording-despiked', 'physio'])+'.json']))
-                    s3_paths.append('/'.join([s3_prefix, participant, session, scan, '_'.join([participant, session, 'dwi'])+'.nii.gz']))
-                    s3_paths.append('/'.join([s3_prefix, participant, session, scan, '_'.join([participant, session, 'dwi'])+'.bval']))
-                    s3_paths.append('/'.join([s3_prefix, participant, session, scan, '_'.join([participant, session, 'dwi'])+'.bvec']))
-                    s3_paths.append('/'.join([s3_prefix, participant, session, scan, '_'.join([participant, session, 'dwi'])+'.json']))
-                    s3_paths.append('/'.join([s3_prefix, participant, session, scan, '_'.join([participant, session, 'dwi', 'physio'])+'.tsv.gz']))
-                    s3_paths.append('/'.join([s3_prefix, participant, session, scan, '_'.join([participant, session, 'dwi', 'physio'])+'.json']))
-                elif scan == 'fmap':
-                    s3_paths.append('/'.join([s3_prefix, participant, session, scan, '_'.join([participant, session, 'magnitude1'])+'.nii.gz']))
-                    s3_paths.append('/'.join([s3_prefix, participant, session, scan, '_'.join([participant, session, 'phasediff'])+'.nii.gz']))
-                    s3_paths.append('/'.join([s3_prefix, participant, session, scan, '_'.join([participant, session, 'phasediff'])+'.json']))
+        participants_df = participants_df[participants_df['handedness'] == 'LEFT']
 
     if len(participants_df) == 0:
         print 'No participants meet the criteria given.  No download will be initiated.'
         return
 
-    # Remove the files that don't exist by iterating through the list and trying to fetch them.
-    urls = [url for url in s3_paths]
-    for url in urls:
-        try:
-            url_head = urllib.urlopen(url).readline()
-            if 'xml' in url_head:
-                s3_paths.remove(url)
-        except Exception as exc:
-            print 'Problem determining if %s is a valid file to download:'
-            print exc
-            print 'Removing for now.  Re-run script to retry.'
-            s3_paths.remove(url)
+    # Generate a list of participants to filter on.
+    participants_filt = ['sub-'+ label + '/' for label in participants_df['participant_id'].tolist()]
+
+    # Generate a list of sessions to filter on.
+    sessions_filt = ['ses-' + session + '/' for session in sessions]
+
+    # Generate a list of series to filter on.
+    series_filt = [SERIES_MAP[s] for s in series]
+
+    # Fetch top-level JSONs first.
+    json_keylist = [key for key in s3_keylist for s in series_filt if s in key and 'json' in key and 'sub' not in key]
+   
+    # Applying filters.
+    s3_keylist = [key for key in s3_keylist for p in participants_filt if p in key]
+    s3_keylist = [key for key in s3_keylist for s in sessions_filt if s in key]
+    s3_keylist = [key for key in s3_keylist for s in scans if s in key]
+    s3_keylist = [key for key in s3_keylist for s in series_filt if (s in key) or ('func' not in key) ]
+
+    # Add back top-level files
+    s3_keylist.extend(json_keylist)
+    s3_keylist.append('/'.join([s3_prefix, 'CHANGES']))
+    s3_keylist.append('/'.join([s3_prefix, 'README']))
+    s3_keylist.append('/'.join([s3_prefix, 'dataset_description.json']))
 
     # And download the items
-    total_num_files = len(s3_paths)
-    files_downloaded = len(s3_paths)
-    for path_idx, s3_path in enumerate(s3_paths):
+    total_num_files = len(s3_keylist)
+    files_downloaded = len(s3_keylist)
+    for path_idx, s3_path in enumerate(s3_keylist):
         rel_path = s3_path.replace(s3_prefix, '')
         rel_path = rel_path.lstrip('/')
         download_file = os.path.join(out_dir, rel_path)
@@ -257,7 +169,8 @@ def collect_and_download(out_dir,
                     print 'Would download to: %s' % download_file
                 else:
                     print 'Downloading to: %s' % download_file
-                    urllib.urlretrieve(s3_path, download_file)
+                    with open(download_file, 'wb') as f:
+                        s3_client.download_fileobj(s3_bucket_name, s3_path, f)
                     print '%.3f%% percent complete' % \
                           (100*(float(path_idx+1)/total_num_files))
             else:
@@ -272,29 +185,35 @@ def collect_and_download(out_dir,
         print '%d files would be downloaded for %d participant(s).' % (files_downloaded,len(participants_df))
     else:
         print '%d files downloaded for %d participant(s).' % (files_downloaded,len(participants_df))
-    print 'Done!'
 
     if not dryrun:
         print 'Saving out revised participants.tsv and session tsv files.'
         # Save out revised participants.tsv to output directory, if a participants.tsv already exists, open it and append it to the new one.
         if os.path.isfile(os.path.join(out_dir, 'participants.tsv')):
             old_participants_df = pandas.read_csv(os.path.join(out_dir, 'participants.tsv'), delimiter='\t', na_values=['n/a', 'N/A'])
-            participants_df=participants_df.append(old_participants_df, ignore_index=True)
+            participants_df = participants_df.append(old_participants_df, ignore_index=True)
             participants_df.drop_duplicates(inplace=True)
             os.remove(os.path.join(out_dir, 'participants.tsv'))
         participants_df.to_csv(os.path.join(out_dir, 'participants.tsv'), sep="\t", na_rep="n/a", index=False)
 
+        # Separate list for sessions TSVs.
+        session_keylist = [key.key for key in s3_keys if 'sessions.tsv' in key.key]
+        session_keylist = [key for key in session_keylist for p in participants_filt if p in key]
         # Save out revised session tsvs to output directory; if already exists, open it and merge with the new one.
-        for participant in participant_sessions.keys():
-            sessions_df = participant_sessions[participant]
-           # Save out revised sessions tsv to output directory, if a sessions tsv already exists, open it and append it to the new one.
+        for session_key in session_keylist:
+            participant = session_key.split('/')[-2]
+            sessions_obj = s3_client.get_object(Bucket=s3_bucket_name, Key=session_key )
+            sessions_df = pandas.read_csv(sessions_obj['Body'], delimiter='\t', na_values=['n/a'])
+            # Drop all sessions not in specified.
+            sessions_df = sessions_df[sessions_df['session_id'].isin(sessions_filt)]
+            # Save out revised sessions tsv to output directory, if a sessions tsv already exists, open it and append it to the new one.
             if os.path.isfile(os.path.join(out_dir, participant, participant+'_sessions.tsv')):
                 old_sessions_df = pandas.read_csv(os.path.join(out_dir, participant, participant+'_sessions.tsv'), delimiter='\t', na_values=['n/a', 'N/A'])
-                sessions_df=sessions_df.append(old_sessions_df, ignore_index=True)
+                sessions_df = sessions_df.append(old_sessions_df, ignore_index=True)
                 sessions_df.drop_duplicates(inplace=True)
                 os.remove(os.path.join(out_dir, participant, participant+'_sessions.tsv'))
             sessions_df.to_csv(os.path.join(out_dir, participant, participant+'_sessions.tsv'), sep="\t", na_rep="n/a", index=False)
-        print 'Done!'
+    print 'Done!'
 
 # Make module executable
 if __name__ == '__main__':
