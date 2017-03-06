@@ -7,6 +7,7 @@ output: pdf_document
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
+library(lme4)
 ```
 
 ```{r}
@@ -245,11 +246,68 @@ ggsave(filename = '/home/jflournoy/Documents/Notes/Projects/DCN_Special_Issue/Mi
 ```
 
 ```{r}
-test_data <- rockland_aparc2009_clean %>% filter(StructName == 'cuneus', h == 'l') 
 
-library(lme4)
+
 aModel <- lmer(ThickAvg ~ 1 + age_c + age_c_2 + (1 | sub), data = test_data)
 summary(aModel)
 coef(aModel)$sub
+sigma(aModel)
+coef(summary(aModel))
+
+str(aModel)
+```
+
+```{r}
+# test_data <- rockland_aparc2009_clean %>% filter(StructName == 'cuneus', h == 'l') 
+# 
+# aModel_big <- lmer(ThickAvg ~ 1 + poly(age, 2) + (1 | sub) + (1 | h:StructName), data = rockland_aparc2009_clean)
+# aModel_big_reAge <- lmer(ThickAvg ~ 1 + poly(age, 2) + (1 | sub) + (1 + poly(age, 1) | h:StructName), data = rockland_aparc2009_clean)
+# aModel_big_reAge2 <- lmer(ThickAvg ~ 1 + poly(age, 2) + (1 | sub) + (1 + poly(age, 2) | h:StructName), data = rockland_aparc2009_clean)
+# aModel_big_struct <- lmer(ThickAvg ~ 1 + poly(age, 2) + (1 | sub) + (1 | StructName), data = rockland_aparc2009_clean)
+# aModel_big_reAge_struct <- lmer(ThickAvg ~ 1 + poly(age, 2) + (1 | sub) + (1 + poly(age, 1) | StructName), data = rockland_aparc2009_clean)
+# aModel_big_reAge2_struct <- lmer(ThickAvg ~ 1 + poly(age, 2) + (1 | sub) + (1 + poly(age, 2) | StructName), data = rockland_aparc2009_clean)
+# 
+# library(lattice)
+# dotplot(ranef(aModel_big_reAge2_struct, condVar = TRUE))
+# ranef(aModel_big_reAge2_struct, condVar = TRUE)
+# 
+# library(merTools)
+# preds <- predictInterval(aModel_big_reAge2_struct, newdata = rockland_aparc2009_clean, n.sims = 999, .parallel = T)
+# 
+# 
+# summary(aModel_big_reAge2_struct)
+# 
+# comparison_rez <- anova(aModel_big, aModel_big_struct, aModel_big_reAge, aModel_big_reAge_struct, aModel_big_reAge2,aModel_big_reAge2_struct)
+# comparison_rez
+# comparison_rez_REML <- anova(aModel_big, aModel_big_struct, aModel_big_reAge, aModel_big_reAge_struct, aModel_big_reAge2,aModel_big_reAge2_struct, refit=F)
+# comparison_rez_REML
+# 
+# library(optimx)
+# aModel_big_FEstruct_REsub <- lmer(ThickAvg ~ 1 + poly(age, 2)*StructName + (1 | sub), data = rockland_aparc2009_clean,
+#                             control=lmerControl(optimizer="optimx",
+#                                                 optCtrl=list(method="bobyqa")))
+# aModel_big_FEstruct_REint <- lmer(ThickAvg ~ 1 + poly(age, 2)*StructName + (1 | sub) + (1 | StructName), data = rockland_aparc2009_clean,
+#                             control=lmerControl(optimizer="optimx",
+#                                                 optCtrl=list(method="bobyqa")))
+# aModel_big_FEstruct_RE1 <- lmer(ThickAvg ~ 1 + poly(age, 2)*StructName + (1 | sub) + (1 + poly(age, 1) | StructName), data = rockland_aparc2009_clean,
+#                             control=lmerControl(optimizer="optimx",
+#                                                 optCtrl=list(method="L-BFGS-B")))
+# aModel_big_FEstruct_RE2 <- lmer(ThickAvg ~ 1 + poly(age, 2)*StructName + (1 | sub) + (1 + poly(age, 2) | StructName), data = rockland_aparc2009_clean,
+#                             control=lmerControl(optimizer="optimx",
+#                                                 optCtrl=list(method="bobyqa")))
+# anova(aModel_big_FEstruct_REsub, aModel_big_FEstruct_REint, aModel_big_FEstruct_RE1, aModel_big_FEstruct_RE2, refit=F)
+# 
+# summary(aModel_big_FEstruct_REsub)
+# 
+# rockland_aparc2009_clean$predicted <- predict(aModel_big_reAge2_struct, newdata = rockland_aparc2009_clean, re.form = ~(1 + poly(age, 2) | StructName))
+# 
+# ggplot(filter(rockland_aparc2009_clean, h == 'l'), 
+#        aes(x = age, y = predicted, color = interaction(h, StructName), group = interaction(h, StructName)))+
+#   geom_line()
+# 
+# summary(aModel_big)
+# modelcoef <- coef(aModel_big)
+# modelcoef$`h:StructName`
+
 ```
 
