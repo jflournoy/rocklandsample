@@ -152,4 +152,29 @@ ggsave(filename = '/home/jflournoy/Documents/Notes/Projects/DCN_Special_Issue/Mi
 ```
 
 ```{r}
-completed_cln_aga_loc
+rockland_aparc2009 <- completed_cln_aga_loc %>% 
+  group_by(sub, session, age) %>%
+  do({
+    col_names <- c('StructName', 'NumVert', 'SurfArea', 'GrayVol', 'ThickAvg', 'ThickStd', 'MeanCurv', 'GausCurv', 'FoldInd', 'CurvInd')
+    tryCatch({
+      aDF.lh <- read_table(file.path(.$data_path[[1]], 'stats', 'lh.aparc.a2009s.stats'),
+                         skip = 60, 
+                         col_names = col_names)
+    }, error = function(e){
+      aDF.lh <<- data_frame(error = list(e))
+      return(aDF.lh)
+    })
+    tryCatch({
+      aDF.rh <- read_table(file.path(.$data_path[[1]], 'stats', 'rh.aparc.a2009s.stats'),
+                         skip = 60, 
+                         col_names = col_names)
+    }, error = function(e){
+      aDF.rh <<- data_frame(error = list(e))
+      return(aDF.rh)
+    })
+    aDF.lh$h <- 'l'
+    aDF.rh$h <- 'r'
+    aDF <- bind_rows(aDF.lh, aDF.rh)
+    return(aDF)
+  })
+```
