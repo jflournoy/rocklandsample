@@ -128,7 +128,7 @@ rockland_aparc2009 <- completed_cln_aga_loc %>%
   do({
     col_names <- c('StructName', 'NumVert', 'SurfArea', 'GrayVol', 'ThickAvg', 'ThickStd', 'MeanCurv', 'GausCurv', 'FoldInd', 'CurvInd')
     tryCatch({
-      aDF.lh <- read_table(file.path(.$data_path[[1]], 'stats', 'lh.aparc.stats'),
+      aDF.lh <- read_table(file.path(.$data_path[[1]], 'stats', 'lh.aparc.a2009s.stats'),
                          skip = 60, 
                          col_names = col_names)
     }, error = function(e){
@@ -277,7 +277,7 @@ model_fe <- models %>%
     return(coefs_df)
   })
 
-model_estimat_stats <- model_fe %>% ungroup() %>%
+model_estimate_stats <- model_fe %>% ungroup() %>%
   select(-nobs, -ngrps) %>%
   gather(stat, value, Estimate, `Std. Error`, `t value`) %>%
   filter(stat %in% c('Estimate', 'Std. Error')) %>%
@@ -310,7 +310,7 @@ agreement <- power_to_detect %>%
   spread(param, agreement) %>%
   select(-stat) %>%
   unite(StructName, StructName, h, sep = '.') 
-
+:w
 
 age_c_df <- as.data.frame(table(agreement[, c('age_c')]))
 age_c_df$param <- 'age_c'
@@ -321,8 +321,12 @@ param_sig_freq_df <- bind_rows(age_c_df, age_c_2_df) %>%
   spread(param, Freq, fill = 0) %>%
   mutate(Var1 = factor(Var1, levels = c('Neither', 'Available data', 'Complete Cases', 'Both')))
 
-knitr::kable(arrange(param_sig_freq_df, Var1), col.names = c('Sigificant in ...', 'Linear Age', 'Quadratic Age'))
-knitr::kable(agreement, col.names = c('Structure and Hemisphere', 'Linear Age', 'Quadratic Age'))
+
+
+write(knitr::kable(arrange(param_sig_freq_df, Var1), col.names = c('Sigificant in ...', 'Linear Age', 'Quadratic Age'), format = 'latex'),
+      file = file.path('/home/jflournoy/Documents/Notes/Projects/DCN_Special_Issue/Missingness/manuscript/', 'rockland_summary_table.txt'))
+write(knitr::kable(filter(agreement, grepl('\\.l$', StructName)), col.names = c('Structure (left hemisphere)', 'Linear Age', 'Quadratic Age'), format = 'latex'),
+      file = file.path('/home/jflournoy/Documents/Notes/Projects/DCN_Special_Issue/Missingness/manuscript/', 'rockland_parcel_table.txt'))
 
 
 ```
@@ -333,7 +337,7 @@ theme_update(panel.background = element_rect(fill = 'white'),
              strip.background = element_rect(fill='white'),
              legend.key = element_rect(fill='white'))
 
-nada <- model_estimat_stats %>%
+nada <- model_estimate_stats %>%
   group_by(param, stat) %>%
   filter(param != '(Intercept)') %>%
   do({
