@@ -166,15 +166,15 @@ age_diffs <- rockland_aparc2009_clean1 %>%
   mutate(age_diff_raw = age - lag(age, n = 1),
          age_diff = ifelse(is.na(age_diff_raw), 0, age_diff_raw))
 
-rockland_aparc2009_clean <- left_join(rockland_aparc2009_clean1, age_diffs)
+rockland_aparc2009_clean <- left_join(rockland_aparc2009_clean1, age_diffs) %>%
+  group_by(sub) %>%
+  mutate(max_age_diff = max(age_diff), 
+         include_cc = max_age_diff > 30/365)
 
 rockland_aparc2009_clean_cc <- rockland_aparc2009_clean %>%
   group_by(sub) %>%
   mutate(max_age_diff = max(age_diff)) %>%
   filter(max_age_diff > 30/365)
-
-
-
 ```
 
 ```{r}
@@ -246,15 +246,70 @@ ggsave(filename = '/home/jflournoy/Documents/Notes/Projects/DCN_Special_Issue/Mi
 ```
 
 ```{r}
+models_cc <- rockland_aparc2009_clean %>%
+  group_by(StructName, h) %>%
+  filter(include_cc) %>%
+  do({
+    adf <- data_frame(aMod = list(lmer(ThickAvg ~ 1 + age_c + age_c_2 + (1 | sub), data = .)))
+    adf$ngrps = ngrps(adf$aMod[[1]])
+    adf$nobs = nobs(adf$aMod[[1]])
+    return(adf)
+  }) %>%
+  mutate(data_set = 'cc')
+models_avail <- rockland_aparc2009_clean %>%
+  group_by(StructName, h) %>%
+  do({
+    adf <- data_frame(aMod = list(lmer(ThickAvg ~ 1 + age_c + age_c_2 + (1 | sub), data = .)))
+    adf$ngrps = ngrps(adf$aMod[[1]])
+    adf$nobs = nobs(adf$aMod[[1]])
+    return(adf)
+  }) %>%
+  mutate(data_set = 'avail')
 
+models <- bind_rows(models_cc, models_avail)
 
-aModel <- lmer(ThickAvg ~ 1 + age_c + age_c_2 + (1 | sub), data = test_data)
-summary(aModel)
-coef(aModel)$sub
-sigma(aModel)
-coef(summary(aModel))
+model_fe <- models %>% 
+  group_by(StructName, h, data_set, nobs, ngrps) %>% 
+  do({
+    coefs <- coef(summary(.$aMod[[1]]))
+    coefs_df <- as_data_frame(coefs)
+    coefs_df$param <- rownames(coefs)
+    return(coefs_df)
+  })
 
-str(aModel)
+model_estimat_stats <- model_fe %>% ungroup() %>%
+  select(-nobs, -ngrps) %>%
+  gather(stat, value, Estimate, `Std. Error`, `t value`) %>%
+  filter(stat %in% c('Estimate', 'Std. Error')) %>%
+  spread(data_set, value) %>%
+  mutate(perc_diff = (cc - avail)/avail,
+         abs_perc_diff = abs(perc_diff),
+         sign_flip = avail*cc < 0)
+
+quick_t_p <- function(t, df){
+  pt(abs(t), df = df, lower.tail = F)*2
+}
+
+power_to_detect <- model_fe %>% 
+  ungroup() %>%
+  select(-Estimate, -`Std. Error`) %>%
+  mutate(p_lib = quick_t_p(t = `t value`, df = nobs - 3),
+         p_cons = quick_t_p(t = `t value`, df = ngrps - 3),
+         sig_lib = p_lib < .05,
+         sig_cons = p_cons < .05) %>%
+  select(-`t value`, -nobs, -ngrps, -p_lib, -p_cons) %>%
+  gather(stat, value,  sig_lib, sig_cons) %>%
+  spread(data_set, value) %>%
+  mutate(disagreement = avail != cc)
+  
+```
+
+```{r}
+model_fe %>%
+  ggplot(aes(x=Estimate))+
+  geom_density(aes(group = data_set, fill = data_set),
+                 alpha = .5)+
+  facet_wrap(~param, scales = 'free')
 ```
 
 ```{r}
