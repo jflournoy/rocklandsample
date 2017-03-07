@@ -293,23 +293,68 @@ quick_t_p <- function(t, df){
 power_to_detect <- model_fe %>% 
   ungroup() %>%
   select(-Estimate, -`Std. Error`) %>%
-  mutate(p_lib = quick_t_p(t = `t value`, df = nobs - 3),
-         p_cons = quick_t_p(t = `t value`, df = ngrps - 3),
+  mutate(p_lib = quick_t_p(t = `t value`, df = nobs - 3)*68,
+         p_cons = quick_t_p(t = `t value`, df = ngrps - 3)*68,
          sig_lib = p_lib < .05,
          sig_cons = p_cons < .05) %>%
   select(-`t value`, -nobs, -ngrps, -p_lib, -p_cons) %>%
   gather(stat, value,  sig_lib, sig_cons) %>%
   spread(data_set, value) %>%
-  mutate(disagreement = avail != cc)
-  
+  mutate(agreement = 1 + avail + 2*cc)
+
+agreement <- power_to_detect %>%
+  select(-avail, -cc) %>%
+  filter(param != '(Intercept)',
+         stat == 'sig_cons') %>%
+  mutate(agreement = c('Neither', 'Available data', 'Complete Cases', 'Both')[agreement]) %>%
+  spread(param, agreement) %>%
+  select(-stat) %>%
+  unite(StructName, StructName, h, sep = '.') 
+
+
+age_c_df <- as.data.frame(table(agreement[, c('age_c')]))
+age_c_df$param <- 'age_c'
+age_c_2_df <- as.data.frame(table(agreement[, c('age_c_2')]))
+age_c_2_df$param <- 'age_c_2'
+
+param_sig_freq_df <- bind_rows(age_c_df, age_c_2_df) %>%
+  spread(param, Freq, fill = 0) %>%
+  mutate(Var1 = factor(Var1, levels = c('Neither', 'Available data', 'Complete Cases', 'Both')))
+
+knitr::kable(arrange(param_sig_freq_df, Var1), col.names = c('Sigificant in ...', 'Linear Age', 'Quadratic Age'))
+knitr::kable(agreement, col.names = c('Structure and Hemisphere', 'Linear Age', 'Quadratic Age'))
+
+
 ```
 
 ```{r}
-model_fe %>%
-  ggplot(aes(x=Estimate))+
-  geom_density(aes(group = data_set, fill = data_set),
-                 alpha = .5)+
-  facet_wrap(~param, scales = 'free')
+theme_update(panel.background = element_rect(fill = 'white'), 
+             axis.line = element_line(size=0),
+             strip.background = element_rect(fill='white'),
+             legend.key = element_rect(fill='white'))
+
+nada <- model_estimat_stats %>%
+  group_by(param, stat) %>%
+  filter(param != '(Intercept)') %>%
+  do({
+    filename <- file.path('/home/jflournoy/Documents/Notes/Projects/DCN_Special_Issue/Missingness/manuscript/', paste0('rockland_', .$stat[[1]], '_', .$param[[1]], '.pdf'))
+    param <- c('(Intercept)' = 'Intercept', 'age_c' = 'Age', 'age_c_2' = expression(Age^2))[.$param[[1]]][[1]]
+    xmedian <- median(.$perc_diff)
+    xlims <- quantile(.$perc_diff, probs = c(.025, .975))
+    xlims[1] <- ifelse(xlims[1] < 0, xlims[1], 0)
+    aplot <- ggplot(., aes(x=perc_diff))+
+      geom_density(fill = 'black', alpha = .25)+
+      coord_cartesian(x = xlims)+
+      geom_vline(xintercept = 0, color = 'black', alpha = .5)+
+      geom_vline(xintercept = xmedian, color = 'red')+
+      labs(title = bquote(paste(.(.$stat[[1]]),': ', .(param))),
+           x = 'Percent Difference',
+           y = 'Density')
+    print(aplot)
+    ggsave(filename = filename, aplot, width = (8.5-2)/2, height = (11-2)/3, units = 'in')
+    return(data_frame(plot = list(aplot)))
+  })
+
 ```
 
 ```{r}
