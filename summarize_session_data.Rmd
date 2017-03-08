@@ -282,7 +282,7 @@ model_estimate_stats <- model_fe %>% ungroup() %>%
   gather(stat, value, Estimate, `Std. Error`, `t value`) %>%
   filter(stat %in% c('Estimate', 'Std. Error')) %>%
   spread(data_set, value) %>%
-  mutate(perc_diff = (cc - avail)/avail,
+  mutate(perc_diff = (cc - avail)/avail*100,
          abs_perc_diff = abs(perc_diff),
          sign_flip = avail*cc < 0)
 
@@ -310,7 +310,7 @@ agreement <- power_to_detect %>%
   spread(param, agreement) %>%
   select(-stat) %>%
   unite(StructName, StructName, h, sep = '.') 
-:w
+
 
 age_c_df <- as.data.frame(table(agreement[, c('age_c')]))
 age_c_df$param <- 'age_c'
@@ -341,20 +341,28 @@ nada <- model_estimate_stats %>%
   group_by(param, stat) %>%
   filter(param != '(Intercept)') %>%
   do({
+    if (.$stat[[1]] == 'Std. Error'){
+      binwidth = 5
+      xlims <- c(0, 60)
+      } else {
+      binwidth = 20
+      xlims <- quantile(.$perc_diff, probs = c(.05, .95))
+      }
     filename <- file.path('/home/jflournoy/Documents/Notes/Projects/DCN_Special_Issue/Missingness/manuscript/', paste0('rockland_', .$stat[[1]], '_', .$param[[1]], '.pdf'))
     param <- c('(Intercept)' = 'Intercept', 'age_c' = 'Age', 'age_c_2' = expression(Age^2))[.$param[[1]]][[1]]
     xmedian <- median(.$perc_diff)
-    xlims <- quantile(.$perc_diff, probs = c(.025, .975))
-    xlims[1] <- ifelse(xlims[1] < 0, xlims[1], 0)
+    # abs_median <- median(.$abs_perc_diff)
     aplot <- ggplot(., aes(x=perc_diff))+
-      geom_density(fill = 'black', alpha = .25)+
+      geom_histogram(fill = '#666666', binwidth = binwidth)+
       coord_cartesian(x = xlims)+
-      geom_vline(xintercept = 0, color = 'black', alpha = .5)+
-      geom_vline(xintercept = xmedian, color = 'red')+
+      geom_vline(xintercept = 0, color = 'black')+
+      geom_vline(xintercept = xmedian, color = 'red', linetype = 2, size = 1)+
       labs(title = bquote(paste(.(.$stat[[1]]),': ', .(param))),
            x = 'Percent Difference',
-           y = 'Density')
+           y = 'Count')
     print(aplot)
+    print(paste0(.$stat[[1]], ' ', .$param[[1]],': ', xmedian))
+    # print(paste0('abs med ', .$stat[[1]], ' ', .$param[[1]],': ', abs_median))
     ggsave(filename = filename, aplot, width = (8.5-2)/2, height = (11-2)/3, units = 'in')
     return(data_frame(plot = list(aplot)))
   })
